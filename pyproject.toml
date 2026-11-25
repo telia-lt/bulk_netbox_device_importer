@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "netbox-device-importer"
+version = "0.1.0"
+description = "NetBox 4.x plugin for mass importing devices, interfaces, IP addresses, and missing sites from Excel."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "openpyxl>=3.1.5,<4",
+]
+
+[tool.setuptools.packages.find]
+include = ["netbox_device_importer*"]
+
+[tool.setuptools.package-data]
+netbox_device_importer = ["templates/**/*.html"]

@@ -1,0 +1,372 @@
+{% extends 'base/layout.html' %}
+
+{% block title %}Įrenginių importas{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+      <h1 class="mb-1">Įrenginių importas</h1>
+      <div class="text-muted small">
+        NETBOX / DCIM / DEVICES &middot; Sąsajas ir IP nurodykite Excel lape <code>Interfaces</code>. VRF turi priklausyti device tenant.
+      </div>
+    </div>
+    <div>
+      <a href="{% url 'plugins:netbox_device_importer:template' %}" class="btn btn-outline-secondary">
+        <i class="mdi mdi-download"></i> Excel šablonas
+      </a>
+    </div>
+  </div>
+
+  <!-- Upload card -->
+  <div class="card mb-3">
+    <div class="card-body">
+      <form method="post" enctype="multipart/form-data" class="row g-3 align-items-end">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="upload">
+        <div class="col-md-6">
+          <label class="form-label" for="{{ form.excel_file.id_for_label }}">{{ form.excel_file.label }}</label>
+          {{ form.excel_file }}
+        </div>
+        <div class="col-md-4">
+          <div class="form-check mb-2">
+            {{ form.allow_duplicate_ips }}
+            <label class="form-check-label" for="{{ form.allow_duplicate_ips.id_for_label }}">
+              {{ form.allow_duplicate_ips.label }}
+            </label>
+            <div class="form-text">{{ form.allow_duplicate_ips.help_text }}</div>
+          </div>
+        </div>
+        <div class="col-md-2">
+          <button type="submit" class="btn btn-primary w-100" {% if import_active %}disabled{% endif %}>
+            <i class="mdi mdi-upload"></i> Įkelti failą
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  {% if not has_rows %}
+  <div class="card">
+    <div class="card-body text-center py-5">
+      <p class="text-muted mb-3">Nepasirinktas Excel failas.</p>
+      <form method="post" class="d-inline">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="demo">
+        <button type="submit" class="btn btn-outline-primary">
+          <i class="mdi mdi-eye-outline"></i> Atidaryti pavyzdį
+        </button>
+      </form>
+    </div>
+  </div>
+  {% else %}
+
+  {% if is_demo %}
+  <div class="alert alert-warning d-flex justify-content-between align-items-center">
+    <span>Demonstraciniai duomenys. NetBox duomenų bazės pakeitimai nevykdomi.</span>
+    <form method="post" class="m-0">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="close_demo">
+      <button type="submit" class="btn btn-sm btn-outline-dark" {% if import_active %}disabled{% endif %}>Uždaryti pavyzdį</button>
+    </form>
+  </div>
+  {% elif filename %}
+  <div class="text-muted small mb-2">Įkeltas failas: <strong>{{ filename }}</strong></div>
+  {% endif %}
+
+  <!-- Metrics -->
+  <div class="row g-3 mb-3">
+    <div class="col-sm-6 col-md-3">
+      <div class="card">
+        <div class="card-body">
+          <div class="text-muted small">Iš viso</div>
+          <div class="h2 mb-0">{{ metrics.total }}</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-sm-6 col-md-3">
+      <div class="card">
+        <div class="card-body">
+          <div class="text-muted small">Paruošta importavimui</div>
+          <div class="h2 mb-0 text-success">{{ metrics.ready }}</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-sm-6 col-md-3">
+      <div class="card">
+        <div class="card-body">
+          <div class="text-muted small">Su klaidomis</div>
+          <div class="h2 mb-0 text-danger">{{ metrics.errors }}</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-sm-6 col-md-3">
+      <div class="card">
+        <div class="card-body">
+          <div class="text-muted small">Sukurta</div>
+          <div class="h2 mb-0 text-primary">{{ metrics.created }}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Import Progress / Last Import Status -->
+  {% if import_active and job_status %}
+  <div class="card mb-3 border-primary" id="import-progress-card">
+    <div class="card-body">
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <strong id="import-progress-text">
+          Apdorota: {{ job_status.completed }} / {{ job_status.total }}
+          {% if job_status.current_name %}&middot; {{ job_status.current_name }}{% endif %}
+        </strong>
+        <button type="button" class="btn btn-sm btn-danger" id="stop-import-btn" {% if job_status.stopping %}disabled{% endif %}>
+          <i class="mdi mdi-stop-circle-outline"></i> Stabdyti importavimą
+        </button>
+      </div>
+      <div class="progress">
+        <div class="progress-bar progress-bar-striped progress-bar-animated" id="import-progress-bar" role="progressbar" style="width: 0%"></div>
+      </div>
+      {% if job_status.stopping %}
+      <div class="text-muted small mt-2">Stabdoma. Laukiama pradėto įrenginio operacijos pabaigos.</div>
+      {% endif %}
+    </div>
+  </div>
+  {% elif last_import %}
+    {% if last_import.error %}
+    <div class="alert alert-danger">{{ last_import.error }}</div>
+    {% elif last_import.stopping and last_import.completed < last_import.total %}
+    <div class="alert alert-info">Importavimas sustabdytas. Apdorota: {{ last_import.completed }} / {{ last_import.total }}.</div>
+    {% else %}
+    <div class="alert alert-success">Importavimas baigtas. Apdorota: {{ last_import.completed }} / {{ last_import.total }}.</div>
+    {% endif %}
+  {% endif %}
+
+  {% if metrics.uncertain %}
+  <div class="alert alert-warning">
+    Yra neaiškaus rezultato eilučių ({{ metrics.uncertain }}). Jos nebus kartojamos. Patikrinkite įrašus NetBox prieš naują importą.
+  </div>
+  {% endif %}
+
+  {% if metrics.delete_count %}
+  <div class="alert alert-warning">
+    Bus ištrinta senų device: {{ metrics.delete_count }}. Trynimas negrįžtamas; nepavykus naujo device kūrimui senas automatiškai neatkuriamas.
+  </div>
+  {% endif %}
+
+  <!-- Actions -->
+  <div class="card mb-3">
+    <div class="card-body">
+      <div class="row g-2 align-items-center">
+        <div class="col-md-3">
+          <form method="post">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="validate">
+            <input type="hidden" name="filter" value="{{ selected_filter }}">
+            <input type="hidden" name="q" value="{{ search }}">
+            <button type="submit" class="btn btn-outline-primary w-100" {% if is_demo or import_active %}disabled{% endif %}>
+              <i class="mdi mdi-check-decagram-outline"></i> Tikrinti duomenis
+            </button>
+          </form>
+        </div>
+        <div class="col-md-6">
+          <form method="post" class="d-flex align-items-center gap-2">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="import">
+            <input type="hidden" name="filter" value="{{ selected_filter }}">
+            <input type="hidden" name="q" value="{{ search }}">
+            <div class="form-check m-0">
+              <input class="form-check-input" type="checkbox" name="confirm_import" id="confirm_import"
+                     {% if confirm_import %}checked{% endif %} {% if is_demo or import_active %}disabled{% endif %}>
+              <label class="form-check-label small" for="confirm_import">
+                Patvirtinu naujų device sukūrimą ir pažymėtų senų device ištrynimą NetBox
+              </label>
+            </div>
+            <button type="submit" class="btn btn-success text-nowrap"
+                    {% if is_demo or import_active or not metrics.ready %}disabled{% endif %}>
+              <i class="mdi mdi-publish"></i> Importuoti paruoštus ({{ metrics.ready }})
+            </button>
+          </form>
+        </div>
+        <div class="col-md-3 text-end">
+          <a href="{% url 'plugins:netbox_device_importer:report' %}" class="btn btn-outline-secondary w-100 {% if import_active %}disabled{% endif %}">
+            <i class="mdi mdi-file-excel"></i> Atsisiųsti ataskaitą
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Filters & Search -->
+  <div class="card mb-3">
+    <div class="card-body">
+      <form method="get" class="row g-2 align-items-center">
+        <div class="col-md-7">
+          <div class="btn-group" role="group">
+            {% for opt in filter_options %}
+            <a href="?filter={{ opt|urlencode }}&q={{ search|urlencode }}"
+               class="btn btn-sm {% if selected_filter == opt %}btn-primary{% else %}btn-outline-secondary{% endif %}">
+              {{ opt }}
+            </a>
+            {% endfor %}
+          </div>
+        </div>
+        <div class="col-md-5">
+          <div class="input-group input-group-sm">
+            <input type="hidden" name="filter" value="{{ selected_filter }}">
+            <input type="text" name="q" value="{{ search }}" class="form-control" placeholder="Paieška: Device name, site, tenant…">
+            <button type="submit" class="btn btn-outline-secondary">Ieškoti</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Table & Delete Choices -->
+  <div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+      <span>Įrenginiai ({{ records|length }})</span>
+      <div class="d-flex gap-2">
+        {% if bulk_delete_available %}
+        <form method="post" class="m-0">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="bulk_delete">
+          <input type="hidden" name="filter" value="{{ selected_filter }}">
+          <input type="hidden" name="q" value="{{ search }}">
+          <button type="submit" class="btn btn-sm btn-outline-warning" {% if import_active %}disabled{% endif %}>
+            Pažymėti visus tinkamus ištrynimui
+          </button>
+        </form>
+        {% endif %}
+        <button type="submit" form="delete-choices-form" class="btn btn-sm btn-outline-primary" {% if import_active %}disabled{% endif %}>
+          Išsaugoti trynimo pasirinkimus
+        </button>
+      </div>
+    </div>
+    <div class="table-responsive">
+      <form method="post" id="delete-choices-form">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="toggle_delete">
+        <input type="hidden" name="filter" value="{{ selected_filter }}">
+        <input type="hidden" name="q" value="{{ search }}">
+        <table class="table table-hover table-sm mb-0">
+          <thead>
+            <tr>
+              <th>Eil.</th>
+              <th>NetBox ID</th>
+              <th>Būsena</th>
+              <th>Device name</th>
+              <th>Ištrinti seną</th>
+              <th>Senas device (PID)</th>
+              <th>PID būsena</th>
+              <th>Site</th>
+              <th>Site būsena</th>
+              <th>Tenant</th>
+              <th>Manufacturer</th>
+              <th>Device type</th>
+              <th>Role</th>
+              <th>Status</th>
+              <th>Description</th>
+              {% for col in custom_columns %}
+              <th>{{ col }}</th>
+              {% endfor %}
+              <th>Interfaces</th>
+              <th>Klaida</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for rec in records %}
+            <tr>
+              <td>
+                {{ rec.excel_row }}
+                <input type="hidden" name="visible_rows" value="{{ rec.excel_row }}">
+              </td>
+              <td>{{ rec.netbox_id|default:"" }}</td>
+              <td>
+                <span class="badge
+                  {% if rec.state == 'Sukurta' %}bg-primary
+                  {% elif rec.state == 'Paruosta' or rec.state == 'Paruošta' %}bg-success
+                  {% elif rec.state == 'Laukia patikros' %}bg-secondary
+                  {% elif rec.state == 'PID konfliktas' %}bg-warning text-dark
+                  {% else %}bg-danger{% endif %}">
+                  {{ rec.display_state }}
+                </span>
+              </td>
+              <td><strong>{{ rec.name }}</strong></td>
+              <td>
+                <input type="checkbox" class="form-check-input" name="delete_rows" value="{{ rec.excel_row }}"
+                       {% if rec.delete_old %}checked{% endif %}
+                       {% if not rec.can_delete or import_active %}disabled{% endif %}>
+              </td>
+              <td>{{ rec.old_devices }}</td>
+              <td>{{ rec.pid_state }}</td>
+              <td>{{ rec.site }}</td>
+              <td>{{ rec.site_state }}</td>
+              <td>{{ rec.tenant }}</td>
+              <td>{{ rec.manufacturer }}</td>
+              <td>{{ rec.device_type }}</td>
+              <td>{{ rec.role }}</td>
+              <td>{{ rec.status }}</td>
+              <td>{{ rec.description }}</td>
+              {% for val in rec.custom_values %}
+              <td>{{ val }}</td>
+              {% endfor %}
+              <td class="small">{{ rec.interfaces }}</td>
+              <td class="text-danger small">{{ rec.error }}</td>
+            </tr>
+            {% empty %}
+            <tr>
+              <td colspan="18" class="text-center text-muted py-3">Nėra atitinkančių eilučių.</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </form>
+    </div>
+  </div>
+
+  {% endif %}
+</div>
+
+{% if import_active %}
+<script>
+(function() {
+  const statusUrl = "{% url 'plugins:netbox_device_importer:status' %}";
+  const stopUrl = "{% url 'plugins:netbox_device_importer:stop' %}";
+  const csrfToken = "{{ csrf_token }}";
+  const stopBtn = document.getElementById("stop-import-btn");
+  const textEl = document.getElementById("import-progress-text");
+  const barEl = document.getElementById("import-progress-bar");
+
+  if (stopBtn) {
+    stopBtn.addEventListener("click", function() {
+      stopBtn.disabled = true;
+      fetch(stopUrl, {
+        method: "POST",
+        headers: {"X-CSRFToken": csrfToken}
+      });
+    });
+  }
+
+  function poll() {
+    fetch(statusUrl)
+      .then(r => r.json())
+      .then(data => {
+        if (!data.active || data.finished) {
+          window.location.reload();
+          return;
+        }
+        const pct = data.total > 0 ? Math.round((data.completed / data.total) * 100) : 0;
+        if (barEl) barEl.style.width = pct + "%";
+        if (textEl) {
+          const cur = data.current_name ? " \u00b7 " + data.current_name : "";
+          textEl.textContent = "Apdorota: " + data.completed + " / " + data.total + cur;
+        }
+        setTimeout(poll, 700);
+      })
+      .catch(() => setTimeout(poll, 1500));
+  }
+  setTimeout(poll, 700);
+})();
+</script>
+{% endif %}
+{% endblock %}

@@ -184,6 +184,11 @@ class DeviceImportView(LoginRequiredMixin, PermissionRequiredMixin, View):
             messages.success(request, f"Įkelta įrenginių eilučių: {len(rows)}.")
             return redirect(request.path)
 
+        if action == "set_duplicate_ips":
+            state["allow_duplicate_ips"] = request.POST.get("allow_duplicate_ips") == "on"
+            _save_state(key, state)
+            return redirect(f"{request.path}?{urlencode({'filter': selected_filter, 'q': search})}")
+
         if action == "demo":
             state = {
                 "rows": rows_to_list(demo_rows()),

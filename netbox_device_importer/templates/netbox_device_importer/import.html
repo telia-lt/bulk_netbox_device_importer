@@ -21,20 +21,31 @@
   <!-- Upload card -->
   <div class="card mb-3">
     <div class="card-body">
-      <form method="post" enctype="multipart/form-data" class="row g-3 align-items-end" id="upload-form">
-        {% csrf_token %}
-        <input type="hidden" name="action" value="upload">
-        <input type="hidden" name="allow_duplicate_ips" value="{{ allow_duplicate_ips|yesno:'1,0' }}">
-        <div class="visually-hidden">
-          <label for="{{ form.excel_file.id_for_label }}">{{ form.excel_file.label }}</label>
-          {{ form.excel_file }}
-        </div>
-        <div class="col">
+      <div class="d-flex align-items-center gap-2 flex-wrap">
+        <form method="post" enctype="multipart/form-data" class="m-0" id="upload-form">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="upload">
+          <input type="hidden" name="allow_duplicate_ips" value="{{ allow_duplicate_ips|yesno:'1,0' }}">
+          <div class="visually-hidden">
+            <label for="{{ form.excel_file.id_for_label }}">{{ form.excel_file.label }}</label>
+            {{ form.excel_file }}
+          </div>
           <button type="button" class="btn btn-primary" id="choose-upload-file" {% if import_active %}disabled{% endif %}>
             <i class="mdi mdi-upload"></i> Įkelti failą
           </button>
-        </div>
-      </form>
+        </form>
+        {% if filename and not is_demo %}
+        <span class="small text-muted text-break">{{ filename }}</span>
+        <form method="post" class="m-0">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="clear_upload">
+          <button type="submit" class="btn btn-sm btn-outline-secondary" aria-label="Pašalinti įkeltą failą"
+                  title="Pašalinti įkeltą failą" {% if import_active %}disabled{% endif %}>
+            <i class="mdi mdi-close" aria-hidden="true"></i>
+          </button>
+        </form>
+        {% endif %}
+      </div>
     </div>
   </div>
 
@@ -77,8 +88,6 @@
       <button type="submit" class="btn btn-sm btn-outline-dark" {% if import_active %}disabled{% endif %}>Uždaryti pavyzdį</button>
     </form>
   </div>
-  {% elif filename %}
-  <div class="text-muted small mb-2">Įkeltas failas: <strong>{{ filename }}</strong></div>
   {% endif %}
 
   <!-- Metrics -->
@@ -244,6 +253,37 @@
   </div>
 
   <!-- Table & Delete Choices -->
+  <style>
+    #device-import-table th {
+      position: relative;
+    }
+
+    .device-import-column-resizer {
+      position: absolute;
+      top: 0;
+      right: -4px;
+      z-index: 2;
+      width: 9px;
+      height: 100%;
+      cursor: col-resize;
+      touch-action: none;
+    }
+
+    .device-import-column-resizer::after {
+      position: absolute;
+      top: 20%;
+      bottom: 20%;
+      left: 4px;
+      width: 1px;
+      background: transparent;
+      content: "";
+    }
+
+    .device-import-column-resizer:hover::after,
+    .device-import-column-resizer:focus-visible::after {
+      background: #6c757d;
+    }
+  </style>
   <div class="card">
     <div class="card-header d-flex justify-content-between align-items-center">
       <span>Įrenginiai ({{ records|length }})</span>
@@ -270,7 +310,7 @@
         <input type="hidden" name="action" value="toggle_delete">
         <input type="hidden" name="filter" value="{{ selected_filter }}">
         <input type="hidden" name="q" value="{{ search }}">
-        <table class="table table-hover table-bordered table-sm mb-0">
+        <table class="table table-hover table-bordered table-sm mb-0" id="device-import-table">
           <thead>
             <tr>
               <th>Eil.</th>
@@ -353,6 +393,74 @@
       if (fileInput.files.length > 0) {
         uploadForm.requestSubmit();
       }
+    });
+  }
+
+  const table = document.getElementById("device-import-table");
+  if (table) {
+    const headers = Array.from(table.querySelectorAll("thead th"));
+    const widths = headers.map(header => Math.max(50, Math.round(header.getBoundingClientRect().width)));
+    const colgroup = document.createElement("colgroup");
+    const columns = headers.map(() => document.createElement("col"));
+    columns.forEach(column => colgroup.appendChild(column));
+    table.insertBefore(colgroup, table.firstChild);
+    table.style.tableLayout = "fixed";
+    table.style.width = "max-content";
+    table.style.minWidth = "100%";
+
+    headers.forEach((header, index) => {
+      const column = columns[index];
+      const initialWidth = widths[index];
+      column.style.width = initialWidth + "px";
+
+      const resizer = document.createElement("span");
+      resizer.className = "device-import-column-resizer";
+      resizer.setAttribute("role", "separator");
+      resizer.setAttribute("aria-orientation", "vertical");
+      resizer.setAttribute("aria-label", "Keisti stulpelio „" + header.textContent.trim() + "“ plotį");
+      resizer.setAttribute("aria-valuemin", "50");
+      resizer.setAttribute("aria-valuenow", String(initialWidth));
+      resizer.setAttribute("tabindex", "0");
+      resizer.title = "Tempkite arba naudokite rodyklių klavišus";
+      header.appendChild(resizer);
+
+      function setWidth(width) {
+        const nextWidth = Math.max(50, Math.round(width));
+        column.style.width = nextWidth + "px";
+        resizer.setAttribute("aria-valuenow", String(nextWidth));
+      }
+
+      resizer.addEventListener("pointerdown", function(event) {
+        if (event.button !== 0) return;
+        event.preventDefault();
+        const startX = event.clientX;
+        const startWidth = column.getBoundingClientRect().width;
+        const pointerId = event.pointerId;
+
+        function onPointerMove(moveEvent) {
+          if (moveEvent.pointerId === pointerId) {
+            setWidth(startWidth + moveEvent.clientX - startX);
+          }
+        }
+
+        function onPointerUp(upEvent) {
+          if (upEvent.pointerId !== pointerId) return;
+          document.removeEventListener("pointermove", onPointerMove);
+          document.removeEventListener("pointerup", onPointerUp);
+          document.removeEventListener("pointercancel", onPointerUp);
+        }
+
+        document.addEventListener("pointermove", onPointerMove);
+        document.addEventListener("pointerup", onPointerUp);
+        document.addEventListener("pointercancel", onPointerUp);
+      });
+
+      resizer.addEventListener("keydown", function(event) {
+        if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+        event.preventDefault();
+        const direction = event.key === "ArrowRight" ? 1 : -1;
+        setWidth(column.getBoundingClientRect().width + direction * 16);
+      });
     });
   }
 })();

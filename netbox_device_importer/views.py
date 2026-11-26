@@ -201,7 +201,7 @@ class DeviceImportView(LoginRequiredMixin, PermissionRequiredMixin, View):
             _save_state(key, state)
             return redirect(request.path)
 
-        if action == "close_demo":
+        if action in {"close_demo", "clear_upload"}:
             _save_state(
                 key,
                 {

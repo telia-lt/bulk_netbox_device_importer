@@ -12,6 +12,6 @@ class ExcelUploadForm(forms.Form):
     allow_duplicate_ips = forms.BooleanField(
         label="Leisti IP adresams kartotis",
         required=False,
-        help_text="Pažymėjus, IP dublikatai tarp skirtingų įrenginių tame pačiame VRF nebus laikomi failo klaida.",
+        help_text="Pažymėjus, IP dublikatai tarp skirtingų įrenginių nebus laikomi failo klaida.",
         widget=forms.CheckboxInput(attrs={"class": "form-check-input"}),
     )

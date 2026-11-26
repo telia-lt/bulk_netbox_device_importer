@@ -21,24 +21,16 @@
   <!-- Upload card -->
   <div class="card mb-3">
     <div class="card-body">
-      <form method="post" enctype="multipart/form-data" class="row g-3 align-items-end">
+      <form method="post" enctype="multipart/form-data" class="row g-3 align-items-end" id="upload-form">
         {% csrf_token %}
         <input type="hidden" name="action" value="upload">
-        <div class="col-md-6">
-          <label class="form-label" for="{{ form.excel_file.id_for_label }}">{{ form.excel_file.label }}</label>
+        <input type="hidden" name="allow_duplicate_ips" value="{{ allow_duplicate_ips|yesno:'1,0' }}">
+        <div class="visually-hidden">
+          <label for="{{ form.excel_file.id_for_label }}">{{ form.excel_file.label }}</label>
           {{ form.excel_file }}
         </div>
-        <div class="col-md-4">
-          <div class="form-check mb-2">
-            {{ form.allow_duplicate_ips }}
-            <label class="form-check-label" for="{{ form.allow_duplicate_ips.id_for_label }}">
-              {{ form.allow_duplicate_ips.label }}
-            </label>
-            <div class="form-text">{{ form.allow_duplicate_ips.help_text }}</div>
-          </div>
-        </div>
-        <div class="col-md-2">
-          <button type="submit" class="btn btn-primary w-100" {% if import_active %}disabled{% endif %}>
+        <div class="col">
+          <button type="button" class="btn btn-primary" id="choose-upload-file" {% if import_active %}disabled{% endif %}>
             <i class="mdi mdi-upload"></i> Įkelti failą
           </button>
         </div>
@@ -50,6 +42,21 @@
   <div class="card">
     <div class="card-body text-center py-5">
       <p class="text-muted mb-3">Nepasirinktas Excel failas.</p>
+      <button type="button" class="btn btn-outline-primary mb-3" disabled>
+        <i class="mdi mdi-check-decagram-outline"></i> Tikrinti duomenis
+      </button>
+      <form method="post" class="mb-3">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="set_duplicate_ips">
+        <div class="form-check d-inline-block text-start">
+          <input class="form-check-input" type="checkbox" name="allow_duplicate_ips" id="allow_duplicate_ips"
+                 onchange="this.form.submit()" {% if allow_duplicate_ips %}checked{% endif %}>
+          <label class="form-check-label" for="allow_duplicate_ips">
+            {{ form.allow_duplicate_ips.label }}
+          </label>
+          <div class="form-text">{{ form.allow_duplicate_ips.help_text }}</div>
+        </div>
+      </form>
       <form method="post" class="d-inline">
         {% csrf_token %}
         <input type="hidden" name="action" value="demo">
@@ -167,6 +174,21 @@
               <i class="mdi mdi-check-decagram-outline"></i> Tikrinti duomenis
             </button>
           </form>
+          <form method="post" class="mt-2">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="set_duplicate_ips">
+            <input type="hidden" name="filter" value="{{ selected_filter }}">
+            <input type="hidden" name="q" value="{{ search }}">
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" name="allow_duplicate_ips" id="allow_duplicate_ips"
+                     onchange="this.form.submit()" {% if allow_duplicate_ips %}checked{% endif %}
+                     {% if import_active %}disabled{% endif %}>
+              <label class="form-check-label" for="allow_duplicate_ips">
+                {{ form.allow_duplicate_ips.label }}
+              </label>
+              <div class="form-text">{{ form.allow_duplicate_ips.help_text }}</div>
+            </div>
+          </form>
         </div>
         <div class="col-md-6">
           <form method="post" class="d-flex align-items-center gap-2">
@@ -248,7 +270,7 @@
         <input type="hidden" name="action" value="toggle_delete">
         <input type="hidden" name="filter" value="{{ selected_filter }}">
         <input type="hidden" name="q" value="{{ search }}">
-        <table class="table table-hover table-sm mb-0">
+        <table class="table table-hover table-bordered table-sm mb-0">
           <thead>
             <tr>
               <th>Eil.</th>
@@ -281,16 +303,7 @@
                 <input type="hidden" name="visible_rows" value="{{ rec.excel_row }}">
               </td>
               <td>{{ rec.netbox_id|default:"" }}</td>
-              <td>
-                <span class="badge
-                  {% if rec.state == 'Sukurta' %}bg-primary
-                  {% elif rec.state == 'Paruosta' or rec.state == 'Paruošta' %}bg-success
-                  {% elif rec.state == 'Laukia patikros' %}bg-secondary
-                  {% elif rec.state == 'PID konfliktas' %}bg-warning text-dark
-                  {% else %}bg-danger{% endif %}">
-                  {{ rec.display_state }}
-                </span>
-              </td>
+              <td><span class="text-body">{{ rec.display_state }}</span></td>
               <td><strong>{{ rec.name }}</strong></td>
               <td>
                 <input type="checkbox" class="form-check-input" name="delete_rows" value="{{ rec.excel_row }}"
@@ -326,6 +339,24 @@
 
   {% endif %}
 </div>
+
+<script>
+(function() {
+  const uploadForm = document.getElementById("upload-form");
+  const fileInput = document.getElementById("{{ form.excel_file.id_for_label }}");
+  const uploadButton = document.getElementById("choose-upload-file");
+  if (uploadForm && fileInput && uploadButton) {
+    uploadButton.addEventListener("click", function() {
+      fileInput.click();
+    });
+    fileInput.addEventListener("change", function() {
+      if (fileInput.files.length > 0) {
+        uploadForm.requestSubmit();
+      }
+    });
+  }
+})();
+</script>
 
 {% if import_active %}
 <script>

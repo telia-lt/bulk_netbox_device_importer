@@ -11,3 +11,4 @@ NetBox 4.x įskiepis (`netbox_device_importer`), skirtas masiniam įrenginių, i
 - Interfaces, IPv4/IPv6 adresų ir `primary_ip4` priskyrimas įrenginiui.
 - „Leisti IP adresams kartotis“ pasirinkimas iš karto perskaičiuoja įkelto Excel failo IP dublikatų klaidas. Kitos failo klaidos išlieka; prieš importą reikia iš naujo paspausti „Tikrinti duomenis“. Jau sukurtų įrenginių ir neaiškių importo rezultatų būsena nekeičiama.
 - Fone vykdomas importas su eigos juosta, sustabdymo galimybe ir rezultatų `.xlsx` ataskaita.
+- Importo duomenys atskirti pagal naršyklės skirtuką (`sessionStorage`). Naujai atidarytas skirtukas ar langas nerodo ankstesnio failo ir rezultatų; puslapio atnaujinimas ar grįžimas iš kito NetBox puslapio tame pačiame skirtuke juos išsaugo. Kituose atidarytuose skirtukuose duomenys nekeičiami. Uždarius skirtuką, jau pradėtas importas nenutraukiamas. Naršyklės skirtukų atkūrimo funkcija gali atkurti ir skirtuko duomenis.

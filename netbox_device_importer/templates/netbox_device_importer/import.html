@@ -1,15 +1,12 @@
 {% extends 'base/layout.html' %}
 
-{% block title %}Įrenginių importas{% endblock %}
+{% block title %}Masinis įrenginių importas{% endblock %}
 
 {% block content %}
 <div class="container-fluid">
   <div class="d-flex justify-content-between align-items-center mb-3">
     <div>
-      <h1 class="mb-1">Įrenginių importas</h1>
-      <div class="text-muted small">
-        NETBOX / DCIM / DEVICES &middot; Sąsajas ir IP nurodykite Excel lape <code>Interfaces</code>. VRF turi priklausyti device tenant.
-      </div>
+      <h1 class="mb-1">Masinis įrenginių importas</h1>
     </div>
     <div>
       <a href="{% url 'plugins:netbox_device_importer:template' %}" class="btn btn-primary">
@@ -199,7 +196,7 @@
             </div>
           </form>
         </div>
-        <div class="col-md-8">
+        <div class="col-md-4 ms-auto">
           <form method="post" class="d-flex flex-column align-items-end gap-2">
             {% csrf_token %}
             <input type="hidden" name="action" value="import">
@@ -212,7 +209,7 @@
                 Suprantu, kad ištrintų įrenginių NetBox nebus galima atstatyti
               </label>
             </div>
-            <button type="submit" class="btn btn-success text-nowrap"
+            <button type="submit" class="btn btn-success text-nowrap w-100"
                     {% if is_demo or import_active or not metrics.ready %}disabled{% endif %}>
               <i class="mdi mdi-publish"></i> Importuoti paruoštus ({{ metrics.ready }})
             </button>

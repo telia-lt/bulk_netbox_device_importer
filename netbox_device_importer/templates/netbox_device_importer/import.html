@@ -3,7 +3,13 @@
 {% block title %}Masinis įrenginių importavimas{% endblock %}
 
 {% block content %}
-<div class="container-fluid">
+<noscript>
+  <div class="alert alert-danger">Importavimui reikia įjungti JavaScript ir naršyklės skirtuko saugyklą.</div>
+</noscript>
+<div class="alert alert-danger" id="import-session-error" role="alert" hidden>
+  Nepavyko atidaryti importavimo skirtuko saugyklos. Leiskite naršyklei naudoti sessionStorage ir atnaujinkite puslapį.
+</div>
+<div class="container-fluid" id="device-import-content" hidden>
   <div class="d-flex justify-content-between align-items-center mb-3">
     <div>
       <h1 class="mb-1">Masinis įrenginių importavimas</h1>
@@ -369,6 +375,50 @@
 
 <script>
 (function() {
+  const content = document.getElementById("device-import-content");
+  const currentUrl = new URL(window.location.href);
+  const serverSession = "{{ import_session|escapejs }}";
+  let importSession;
+  try {
+    const storageKey = "{{ import_storage_key|escapejs }}";
+    if (window.opener) {
+      window.opener = null;
+      sessionStorage.removeItem(storageKey);
+    }
+    importSession = sessionStorage.getItem(storageKey);
+    if (!importSession) {
+      if (currentUrl.searchParams.has("import_session")) {
+        currentUrl.searchParams.delete("import_session");
+        window.location.replace(currentUrl);
+        return;
+      }
+      importSession = serverSession;
+      sessionStorage.setItem(storageKey, importSession);
+    }
+  } catch (error) {
+    console.error("Nepavyko pasiekti importavimo skirtuko saugyklos.", error);
+    document.getElementById("import-session-error").hidden = false;
+    return;
+  }
+  if (currentUrl.searchParams.get("import_session") !== importSession) {
+    currentUrl.searchParams.set("import_session", importSession);
+    window.location.replace(currentUrl);
+    return;
+  }
+  content.querySelectorAll("form").forEach(form => {
+    const input = document.createElement("input");
+    input.type = "hidden";
+    input.name = "import_session";
+    input.value = importSession;
+    form.appendChild(input);
+  });
+  content.querySelectorAll('a[href^="?"]').forEach(link => {
+    const url = new URL(link.href);
+    url.searchParams.set("import_session", importSession);
+    link.href = url.href;
+  });
+  content.hidden = false;
+
   const uploadForm = document.getElementById("upload-form");
   const fileInput = document.getElementById("{{ form.excel_file.id_for_label }}");
   const uploadButton = document.getElementById("choose-upload-file");
@@ -465,8 +515,9 @@
 {% if import_active %}
 <script>
 (function() {
-  const statusUrl = "{% url 'plugins:netbox_device_importer:status' %}";
-  const stopUrl = "{% url 'plugins:netbox_device_importer:stop' %}";
+  if (document.getElementById("device-import-content").hidden) return;
+  const statusUrl = "{% url 'plugins:netbox_device_importer:status' %}?import_session={{ import_session|urlencode }}";
+  const stopUrl = "{% url 'plugins:netbox_device_importer:stop' %}?import_session={{ import_session|urlencode }}";
   const csrfToken = "{{ csrf_token }}";
   const stopBtn = document.getElementById("stop-import-btn");
   const textEl = document.getElementById("import-progress-text");

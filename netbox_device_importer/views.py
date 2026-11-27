@@ -5,8 +5,10 @@ from urllib.parse import urlencode
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin, PermissionRequiredMixin
 from django.core.cache import cache
+from django.core.exceptions import SuspiciousOperation
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import redirect, render
+from django.urls import reverse
 from django.views import View
 
 from .excel_io import parse_excel, report_bytes, template_bytes
@@ -25,7 +27,16 @@ def _state_key(request) -> str:
     if not session_token:
         session_token = uuid.uuid4().hex
         request.session["netbox_device_importer_token"] = session_token
-    return f"netbox_device_importer:{request.user.pk}:{session_token}"
+    token = request.POST.get("import_session") or request.GET.get("import_session")
+    try:
+        request.import_session = uuid.UUID(token).hex if token else uuid.uuid4().hex
+    except ValueError as error:
+        raise SuspiciousOperation("Netinkamas importavimo skirtuko identifikatorius.") from error
+    return f"netbox_device_importer:{request.user.pk}:{session_token}:{request.import_session}"
+
+
+def _import_url(request, **query) -> str:
+    return f"{request.path}?{urlencode({**query, 'import_session': request.import_session})}"
 
 
 def _load_state(key: str) -> dict:
@@ -142,6 +153,8 @@ class DeviceImportView(LoginRequiredMixin, PermissionRequiredMixin, View):
             "selected_filter": selected_filter,
             "search": search,
             "bulk_delete_available": bulk_delete_available,
+            "import_session": request.import_session,
+            "import_storage_key": key.rsplit(":", 1)[0],
         }
         return render(request, self.template_name, context)
 
@@ -155,24 +168,24 @@ class DeviceImportView(LoginRequiredMixin, PermissionRequiredMixin, View):
 
         if import_active:
             messages.warning(request, "Importavimas šiuo metu vyksta. Palaukite arba sustabdykite jį.")
-            return redirect(request.path)
+            return redirect(_import_url(request))
 
         if action == "upload":
             form = ExcelUploadForm(request.POST, request.FILES)
             if not form.is_valid():
                 messages.error(request, "Pasirinkite galiojantį .xlsx failą.")
-                return redirect(request.path)
+                return redirect(_import_url(request))
             upload = form.cleaned_data["excel_file"]
             allow_duplicate_ips = bool(form.cleaned_data.get("allow_duplicate_ips"))
             if upload.size > 10 * 1024 * 1024:
                 messages.error(request, "Failas per didelis. Riba: 10 MB.")
-                return redirect(request.path)
+                return redirect(_import_url(request))
             content = upload.read()
             try:
                 rows = parse_excel(content, allow_duplicate_ips=allow_duplicate_ips)
             except ImportProblem as error:
                 messages.error(request, str(error))
-                return redirect(request.path)
+                return redirect(_import_url(request))
             state = {
                 "rows": rows_to_list(rows),
                 "is_demo": False,
@@ -184,7 +197,7 @@ class DeviceImportView(LoginRequiredMixin, PermissionRequiredMixin, View):
             }
             _save_state(key, state)
             messages.success(request, f"Įkelta įrenginių eilučių: {len(rows)}.")
-            return redirect(request.path)
+            return redirect(_import_url(request))
 
         if action == "set_duplicate_ips":
             allow_duplicate_ips = request.POST.get("allow_duplicate_ips") == "on"
@@ -193,12 +206,12 @@ class DeviceImportView(LoginRequiredMixin, PermissionRequiredMixin, View):
                     content = state.get("excel_content")
                     if content is None:
                         messages.warning(request, "Įkelkite Excel failą iš naujo, kad būtų galima perskaičiuoti IP dublikatų klaidas.")
-                        return redirect(f"{request.path}?{urlencode({'filter': selected_filter, 'q': search})}")
+                        return redirect(_import_url(request, filter=selected_filter, q=search))
                     try:
                         parsed_rows = parse_excel(content, allow_duplicate_ips=allow_duplicate_ips)
                     except ImportProblem as error:
                         messages.error(request, str(error))
-                        return redirect(request.path)
+                        return redirect(_import_url(request))
                     previous_rows = {row.excel_row: row for row in rows_from_list(state["rows"])}
                     terminal_states = {"Sukurta", "Neaiskus rezultatas", "Neaiškus rezultatas"}
                     rows = [
@@ -210,7 +223,7 @@ class DeviceImportView(LoginRequiredMixin, PermissionRequiredMixin, View):
                 state["confirm_import"] = False
             state["allow_duplicate_ips"] = allow_duplicate_ips
             _save_state(key, state)
-            return redirect(f"{request.path}?{urlencode({'filter': selected_filter, 'q': search})}")
+            return redirect(_import_url(request, filter=selected_filter, q=search))
 
         if action == "demo":
             state = {
@@ -222,7 +235,7 @@ class DeviceImportView(LoginRequiredMixin, PermissionRequiredMixin, View):
                 "filename": "pavyzdys.xlsx",
             }
             _save_state(key, state)
-            return redirect(request.path)
+            return redirect(_import_url(request))
 
         if action in {"close_demo", "clear_upload"}:
             _save_state(
@@ -236,17 +249,17 @@ class DeviceImportView(LoginRequiredMixin, PermissionRequiredMixin, View):
                     "filename": "",
                 },
             )
-            return redirect(request.path)
+            return redirect(_import_url(request))
 
         rows = rows_from_list(state.get("rows", []))
         if not rows:
             messages.warning(request, "Pirmiausia įkelkite Excel failą.")
-            return redirect(request.path)
+            return redirect(_import_url(request))
 
         if action == "validate":
             if state.get("is_demo"):
                 messages.warning(request, "Demonstraciniai duomenys NetBox netikrinami.")
-                return redirect(request.path)
+                return redirect(_import_url(request))
             backend = NetBoxORMBackend(
                 allow_duplicate_ips=state.get("allow_duplicate_ips", False),
                 user=request.user,
@@ -296,15 +309,15 @@ class DeviceImportView(LoginRequiredMixin, PermissionRequiredMixin, View):
         elif action == "import":
             if state.get("is_demo"):
                 messages.warning(request, "Demonstraciniai duomenys neimportuojami.")
-                return redirect(request.path)
+                return redirect(_import_url(request))
             confirmed = request.POST.get("confirm_import") == "on"
             if not confirmed:
                 messages.error(request, "Pažymėkite patvirtinimo varnelę prieš importuojant.")
-                return redirect(request.path)
+                return redirect(_import_url(request))
             ready_count = sum(1 for row in rows if row.state in {"Paruosta", "Paruošta"})
             if not ready_count:
                 messages.warning(request, "Nėra paruoštų importavimui eilučių.")
-                return redirect(request.path)
+                return redirect(_import_url(request))
 
             state["confirm_import"] = True
             state["last_import"] = None
@@ -317,7 +330,7 @@ class DeviceImportView(LoginRequiredMixin, PermissionRequiredMixin, View):
                 _ACTIVE_JOBS[key] = job
             job.start(lambda: NetBoxORMBackend(allow_duplicate_ips=allow_duplicates, user=user))
 
-        return redirect(f"{request.path}?{urlencode({'filter': selected_filter, 'q': search})}")
+        return redirect(_import_url(request, filter=selected_filter, q=search))
 
 
 class TemplateDownloadView(LoginRequiredMixin, PermissionRequiredMixin, View):
@@ -342,7 +355,10 @@ class ReportDownloadView(LoginRequiredMixin, PermissionRequiredMixin, View):
         rows = rows_from_list(state.get("rows", []))
         if not rows:
             messages.warning(request, "Nėra duomenų ataskaitai.")
-            return redirect("plugins:netbox_device_importer:import")
+            return redirect(
+                f"{reverse('plugins:netbox_device_importer:import')}?"
+                f"{urlencode({'import_session': request.import_session})}"
+            )
         response = HttpResponse(
             report_bytes(rows),
             content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

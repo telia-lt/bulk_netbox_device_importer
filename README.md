@@ -9,4 +9,5 @@ NetBox 4.x įskiepis (`netbox_device_importer`), skirtas masiniam įrenginių, i
 - `PID` unikalumo tikrinimas ir valdomas seno įrenginio ištrynimas esant PID konfliktui (tik su aiškiu naudotojo patvirtinimu).
 - Automatinis trūkstamų `Site` sukūrimas importo metu.
 - Interfaces, IPv4/IPv6 adresų ir `primary_ip4` priskyrimas įrenginiui.
+- „Leisti IP adresams kartotis“ pasirinkimas iš karto perskaičiuoja įkelto Excel failo IP dublikatų klaidas. Kitos failo klaidos išlieka; prieš importą reikia iš naujo paspausti „Tikrinti duomenis“. Jau sukurtų įrenginių ir neaiškių importo rezultatų būsena nekeičiama.
 - Fone vykdomas importas su eigos juosta, sustabdymo galimybe ir rezultatų `.xlsx` ataskaita.

@@ -167,8 +167,9 @@ class DeviceImportView(LoginRequiredMixin, PermissionRequiredMixin, View):
             if upload.size > 10 * 1024 * 1024:
                 messages.error(request, "Failas per didelis. Riba: 10 MB.")
                 return redirect(request.path)
+            content = upload.read()
             try:
-                rows = parse_excel(upload.read(), allow_duplicate_ips=allow_duplicate_ips)
+                rows = parse_excel(content, allow_duplicate_ips=allow_duplicate_ips)
             except ImportProblem as error:
                 messages.error(request, str(error))
                 return redirect(request.path)
@@ -179,13 +180,35 @@ class DeviceImportView(LoginRequiredMixin, PermissionRequiredMixin, View):
                 "confirm_import": False,
                 "last_import": None,
                 "filename": upload.name,
+                "excel_content": content,
             }
             _save_state(key, state)
             messages.success(request, f"Įkelta įrenginių eilučių: {len(rows)}.")
             return redirect(request.path)
 
         if action == "set_duplicate_ips":
-            state["allow_duplicate_ips"] = request.POST.get("allow_duplicate_ips") == "on"
+            allow_duplicate_ips = request.POST.get("allow_duplicate_ips") == "on"
+            if allow_duplicate_ips != state.get("allow_duplicate_ips", False):
+                if state.get("rows") and not state.get("is_demo"):
+                    content = state.get("excel_content")
+                    if content is None:
+                        messages.warning(request, "Įkelkite Excel failą iš naujo, kad būtų galima perskaičiuoti IP dublikatų klaidas.")
+                        return redirect(f"{request.path}?{urlencode({'filter': selected_filter, 'q': search})}")
+                    try:
+                        parsed_rows = parse_excel(content, allow_duplicate_ips=allow_duplicate_ips)
+                    except ImportProblem as error:
+                        messages.error(request, str(error))
+                        return redirect(request.path)
+                    previous_rows = {row.excel_row: row for row in rows_from_list(state["rows"])}
+                    terminal_states = {"Sukurta", "Neaiskus rezultatas", "Neaiškus rezultatas"}
+                    rows = [
+                        previous_rows[row.excel_row]
+                        if previous_rows[row.excel_row].state in terminal_states else row
+                        for row in parsed_rows
+                    ]
+                    state["rows"] = rows_to_list(rows)
+                state["confirm_import"] = False
+            state["allow_duplicate_ips"] = allow_duplicate_ips
             _save_state(key, state)
             return redirect(f"{request.path}?{urlencode({'filter': selected_filter, 'q': search})}")
 
